@@ -22,7 +22,7 @@ This codebase does not provide the ViT activations and checkpoints due to the st
 Parts of the code used in our work was adapted from the Github repositories such as: [OpenOOD](https://github.com/Jingkang50/OpenOOD/tree/main).
 
 ### Citation
-```
+```bibtex
 @inproceedings{feature-evolution-migration-2026,
   title  = {Feature Evolution and Migration during Vision Transformer Training},
   year   = {2026},
