@@ -1,0 +1,79 @@
+# backbone settings
+backbone: vit #vit_mae
+num_heads: 12
+pretrained_vit_IN1K: false
+total_vit_epochs: 300
+vit_size: 768 #3072
+
+#sae setting
+batch_size: 4096
+circuits: true
+eval_split: test 
+expansion_coef: 5
+k: 32
+l1_lambda: 0.0
+l2_lambda: 0.05
+lr: 0.005
+sae_epochs: 150
+sae_type: batch_top_k_sae
+tied: false
+
+#main experiment settings
+ref_epoch: 299
+ref_layer: 11
+fixed_sae: false
+only_plots: false 
+probing: false
+tag: _cls_only #tag for the folder in case of not standard training ["cls_only", "cls_only_tr"]
+test_patches: false
+train_saes: false 
+train_split: train
+trained_on: cls #"mix, cls, patches, None"
+want_images: true
+finetune_sae: false
+combined: true
+combined_images: true
+concept_types: false
+layer_nrs:
+- 0
+- 12
+vit_epochs:
+- 0
+- 300
+
+#global experiment settings
+cache_activations: false
+run_seed_base: 12345
+sae_runs: 1
+skip_existing: true
+verbose_every: 50
+
+#paths
+checkpoint_folder: sae_checkpoints
+plots_dir: figs/sae_similarity
+results_dir: eval_results
+
+#dataset settings
+img_size: 224
+ind_name: imagenet #imagenet_mixed10_balanced #imagenet20
+keywords:
+- train
+- test
+norm: true
+num_classes: 1000
+seed: _s8
+step: 0
+
+#similarity metrics
+topk_ranking: cls #what token to use for topk images ranking cls or patch
+align_compute_chance: false
+align_compute_stability: false
+align_method: spearman
+align_min_sim: 0.05
+align_summary_key: mean_matched
+topk_act_threshold: 0.0
+topk_k: 50
+topk_metric: jaccard
+topk_summary_key: mean_best
+topk_threshold: null
+
