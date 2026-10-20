@@ -1,3 +1,4 @@
+import time
 from torch import nn
 from tqdm import tqdm as tqdm
 import matplotlib.pyplot as plt
@@ -772,108 +773,6 @@ def concept_summary_stats(
     return stats
 
 
-def rank_concepts(
-    stats: Dict[int, Dict[str, float]],
-    *,
-    key: str = "label_entropy",
-    top_n: int = 10,
-    ascending: bool = False,
-    return_scores: bool = False,
-) -> List[Any]:
-    """Return *top_n* concept IDs sorted by a chosen metric.
-
-    Parameters
-    ----------
-    stats : dict
-        Output from :func:`concept_summary_stats`.
-    key : str, default "label_entropy"
-        Which metric to sort on.
-    ascending : bool, default False
-        If *True*, smallest values rank highest.
-    return_scores : bool, default False
-        If *True*, return list of *(concept_id, score)* pairs; otherwise just
-        the concept IDs.
-    """
-    if not stats:
-        warnings.warn("Empty stats dictionary; returning empty list.")
-        return []
-    if key not in next(iter(stats.values())):
-        raise KeyError(f"Metric '{key}' not found in stats dictionary")
-
-# filter out NaNs before sorting
-    valid_pairs = [
-        (cid, m[key]) for cid, m in stats.items() if not math.isnan(m[key])
-    ]
-    if not valid_pairs:
-        warnings.warn(f"All values are NaN for metric '{key}'.")
-        return []
-
-    ranked_pairs = sorted(valid_pairs, key=lambda kv: kv[1], reverse=not ascending)
-    ranked_pairs = ranked_pairs[:top_n]
-    return ranked_pairs if return_scores else [cid for cid, _ in ranked_pairs]
-
-def query_concepts(
-    stats: Dict[int, Dict[str, float]],
-    *,
-    bounds: Dict[str, Tuple[Optional[float], Optional[float]]],
-    sort_key: Optional[str] = None,
-    ascending: bool = True,
-    return_scores: bool = False,
-) -> List[Any]:
-    """Filter concepts using **multiple metric ranges**.
-
-    Parameters
-    ----------
-    stats : dict
-        Output dictionary from :func:`concept_summary_stats`.
-    bounds : dict
-        Mapping ``metric_name -> (lower, upper)`` where *lower* or *upper* can
-        be *None* to leave that side unbounded.  Example::
-
-            bounds = {
-                "sparsity": (None, 0.05),          # sparsity ≤ 5%
-                "label_entropy": (None, 1.0),      # entropy ≤ 1 bit
-                "mean_activation": (1e-3, None),   # mean_act ≥ 1e-3
-            }
-    sort_key : str, optional
-        Metric to sort by.  Defaults to the first key in ``bounds``.
-    ascending : bool, default True
-        Sort order (ignored if *sort_key* is *None*).
-    return_scores : bool, default False
-        If *True* return list of ``(concept_id, metric_dict)``; otherwise just
-        the concept IDs.
-    """
-    if not bounds:
-        raise ValueError("bounds dict cannot be empty.")
-    for k in bounds:
-        if k not in next(iter(stats.values())):
-            raise KeyError(f"Metric '{k}' not found in stats dictionary.")
-
-    def in_range(val: float, lo: Optional[float], hi: Optional[float]) -> bool:
-        if math.isnan(val):
-            return False
-        if lo is not None and val < lo:
-            return False
-        if hi is not None and val > hi:
-            return False
-        return True
-
-    selected: List[Tuple[int, Dict[str, float]]] = []
-    for cid, m in stats.items():
-        if all(in_range(m[k], *bounds[k]) for k in bounds):
-            selected.append((cid, m))
-
-    if sort_key is None:
-        sort_key = next(iter(bounds))  # first metric key
-
-    selected.sort(key=lambda kv: kv[1][sort_key], reverse=not ascending)
-    return (
-        [(cid, mdict) for cid, mdict in selected]
-        if return_scores
-        else [cid for cid, _ in selected]
-    )
-
-
 def plot_metrics_figure(
     stats: Dict[int, Dict[str, float]],
     *,
@@ -947,25 +846,6 @@ def plot_metrics_figure(
         plt.show()
     else:
         plt.close(fig)
-
-def most_activated_indices(
-    sae: SparseAutoencoder,
-    latent_tensor: torch.Tensor,
-    concept_idx: int,
-    *,
-    k: int = 25,
-    device: str = "cuda" if torch.cuda.is_available() else "cpu",
-    bottom = False
-) -> Tuple[torch.Tensor, torch.Tensor]:
-    sae.eval()
-    largest = not bottom
-    with torch.no_grad():
-        codes = sae.encode(latent_tensor.to(device))
-        activations = codes[:, concept_idx].cpu()
-        k_eff = max(1, min(int(k), activations.numel()))
-        topk = torch.topk(activations, k_eff, largest=largest, sorted=True)
-    return topk.indices, topk.values
-
 
 @torch.no_grad()
 def _topk_similarity_matrix(
@@ -1061,10 +941,6 @@ def _topk_similarity_matrix(
 
     return scores
 
-def most_activated_images(image_paths: List[Path], indices: torch.Tensor) -> List[Path]:
-    return [image_paths[i] for i in indices]
-
-
 def _to_numpy(x: Any) -> np.ndarray:
     if isinstance(x, np.ndarray):
         return x
@@ -1073,41 +949,8 @@ def _to_numpy(x: Any) -> np.ndarray:
     return np.asarray(x)
 
 
-#def _rank_transform_cols(x: np.ndarray) -> np.ndarray:
-#    ranked = np.zeros_like(x, dtype=float)
-#    for j in range(x.shape[1]):
-#        ranked[:, j] = rankdata(x[:, j], method="average")
-#    return ranked
-
 def _rank_transform_cols(x, device = None):
     return rankdata(x, method="average", axis=0)
-
-
-@torch.no_grad()
-def _rank_transform_cols_fast(x: torch.Tensor, device = None) -> torch.Tensor:
-    """
-    Fast column-wise rank transform on GPU.
-
-    Equivalent to ordinal ranks per column.
-    For continuous activations, this is usually close to scipy rankdata(..., method="average"),
-    because exact ties are rare.
-    """
-    if device is None:
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-    x = x.cuda(non_blocking=True)
-    n, d = x.shape
-    order = torch.argsort(x, dim=0)
-    ranks = torch.empty_like(order, dtype=torch.float32)
-    rank_values = torch.arange(
-        1, n + 1,
-        device=x.device,
-        dtype=torch.float32
-    )[:, None]
-
-    ranks.scatter_(0, order, rank_values.expand(n, d))
-    return ranks
-
-import torch
 
 @torch.no_grad()
 def rank_transform_cols_torch_average_ties(
@@ -1180,78 +1023,6 @@ def rank_transform_cols_torch_average_ties(
 
     return ranks
 
-def _corr_similarity_matrix(a: np.ndarray, b: np.ndarray) -> np.ndarray:
-    a = a - a.mean(axis=0, keepdims=True)
-    b = b - b.mean(axis=0, keepdims=True)
-    denom_a = np.sqrt((a * a).sum(axis=0, keepdims=True))
-    denom_b = np.sqrt((b * b).sum(axis=0, keepdims=True))
-    denom = (denom_a.T @ denom_b)
-    denom = np.where(denom == 0, 1.0, denom)
-    sim = (a.T @ b) / denom
-    sim = np.clip(sim, -1.0, 1.0)
-    return sim.astype('float16')
-
-
-@torch.no_grad()
-def _cos_similarity_matrix_1(
-    a,
-    b,
-    *,
-    device: Optional[str] = None,
-    dtype: torch.dtype = torch.float16,
-    eps: float = 1e-8,
-    return_numpy: bool = True,
-    **kwargs,
-):
-    """
-    Fast centered cosine similarity between columns.
-
-    a: [N, Da]
-    b: [N, Db]
-
-    returns:
-        [Da, Db]
-    """
-
-    if device is None:
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-
-    a = torch.as_tensor(a, device=device)
-    b = torch.as_tensor(b, device=device)
-
-    if a.ndim != 2 or b.ndim != 2:
-        raise ValueError("a and b must be 2D arrays/tensors [N, D].")
-
-    if a.shape[0] != b.shape[0]:
-        raise ValueError(f"a and b must have same N. Got {a.shape[0]} and {b.shape[0]}.")
-
-    # Use float32 for mean/norm for stability
-    a = a.float()
-    b = b.float()
-
-    # Center columns
-    a = a - a.mean(dim=0, keepdim=True)
-    b = b - b.mean(dim=0, keepdim=True)
-
-    # Normalize columns
-    a = a / a.norm(dim=0, keepdim=True).clamp_min(eps)
-    b = b / b.norm(dim=0, keepdim=True).clamp_min(eps)
-
-    # Cast only for GEMM/output speed
-    a = a.to(dtype)
-    b = b.to(dtype)
-
-    sim = a.T @ b
-    sim = sim.to(torch.float16)
-
-    if return_numpy:
-        return sim.cpu().numpy()
-
-    return sim
-
-import torch
-from typing import Optional
-
 @torch.no_grad()
 def _cos_similarity_matrix(
     a,
@@ -1302,15 +1073,6 @@ def _cos_similarity_matrix(
         return sim.cpu().numpy()
 
     return sim
-
-#def _cos_similarity_matrix(a: np.ndarray, b: np.ndarray) -> np.ndarray:
-#    a = a - a.mean(axis=0, keepdims=True)
-#    b = b - b.mean(axis=0, keepdims=True)
-#    sim = cosine_similarity(a.T,b.T)
-#    return sim.astype('float16')
-
-import torch
-from typing import Optional
 
 @torch.no_grad()
 def _get_random_similarity_matrix_torch(
@@ -1429,116 +1191,6 @@ def _get_random_similarity_matrix(
 
     return (max_similarities / max(1, N)).astype("float16")
 
-
-def _hungarian_from_similarity(
-    sim: np.ndarray,
-    *,
-    allow_unmatched: bool,
-    dummy_sim: float,
-    min_sim: Optional[float],
-) -> Tuple[np.ndarray, np.ndarray]:
-    da, db = sim.shape
-    if allow_unmatched:
-        size = max(da, db)
-        sim_pad = np.full((size, size), dummy_sim, dtype=float)
-        sim_pad[:da, :db] = sim
-        cost = -sim_pad
-        row_ind, col_ind = linear_sum_assignment(cost)
-        match_ids = np.full(da, -1, dtype=int)
-        match_scores = np.full(da, dummy_sim, dtype=float)
-        for r, c in zip(row_ind, col_ind):
-            if r < da:
-                if c < db and (min_sim is None or sim_pad[r, c] >= min_sim):
-                    match_ids[r] = c
-                    match_scores[r] = sim_pad[r, c]
-    else:
-        cost = -sim
-        row_ind, col_ind = linear_sum_assignment(cost)
-        match_ids = np.full(da, -1, dtype=int)
-        match_scores = np.full(da, np.nan, dtype=float)
-        for r, c in zip(row_ind, col_ind):
-            match_ids[r] = c
-            match_scores[r] = sim[r, c]
-        if min_sim is not None:
-            low = match_scores < min_sim
-            match_ids[low] = -1
-    return match_ids, match_scores
-
-#def align_concepts_max(
-
-
-#):
-
-
-def align_concepts_hungarian(
-    sim: np.array,
-    *,
-    rank_transform: Optional[bool] = None,
-    zscore: bool = True,
-    allow_unmatched: bool = True,
-    dummy_sim: float = 0.0,
-    min_sim: Optional[float] = 0.2,
-    thresholds: Tuple[float, float] = (0.7, 0.4),
-    **kwargs
-) -> Dict[str, Any]:
-    """
-    Align concepts across two activation matrices using Hungarian matching.
-
-    acts_a/acts_b are activation matrices with shape [N, D].
-    """
-    da, db = sim.shape
-
-    match_ids, match_scores = _hungarian_from_similarity(
-        sim,
-        allow_unmatched=allow_unmatched,
-        dummy_sim=dummy_sim,
-        min_sim=min_sim,
-    )
-
-    matched_mask = match_ids >= 0
-    matched_scores = match_scores[matched_mask]
-    if matched_scores.size:
-        median = float(np.median(matched_scores))
-        q1 = float(np.percentile(matched_scores, 25))
-        q3 = float(np.percentile(matched_scores, 75))
-    else:
-        median = q1 = q3 = float("nan")
-
-    summary = {
-        "mean_matched": float(np.mean(matched_scores)) if matched_scores.size else float("nan"),
-        "median_matched": median,
-        "iqr_matched": float(q3 - q1) if matched_scores.size else float("nan"),
-        "matched_fraction": float(matched_mask.mean()) if match_ids.size else float("nan"),
-    }
-    for t in thresholds:
-        summary[f"frac_ge_{t}"] = float(np.mean(matched_scores >= t)) if matched_scores.size else float("nan")
-
-    out = {
-        "match_ids": match_ids,
-        "match_scores": match_scores,
-        "summary": summary,
-    }
-    return out
-
-
-import torch
-from typing import Optional
-
-
-def _flatten_features(x: torch.Tensor) -> torch.Tensor:
-    """
-    Flatten all non-batch dimensions.
-
-    Input:
-        x: [N, ...]
-    Output:
-        x_flat: [N, D]
-    """
-    if x.ndim < 2:
-        raise ValueError(f"Expected tensor with shape [N, ...], got {tuple(x.shape)}")
-    return x.flatten(start_dim=1)
-
-
 def _center_columns(x: torch.Tensor) -> torch.Tensor:
     """
     Center features across samples.
@@ -1587,8 +1239,6 @@ def linear_cka(
     cka = hsic / (norm_x * norm_y + eps)
     return _to_numpy(cka)
 
-import time
-
 def get_saes_similarities(
     acts_a:torch.Tensor,
     acts_b: torch.Tensor,
@@ -1607,7 +1257,7 @@ def get_saes_similarities(
     rng = np.random.default_rng(random_state)
     #start = time.time()
     if return_cos:
-        sim_cos = _cos_similarity_matrix(acts_a, acts_b)
+        sim_cos = _cos_similarity_matrix(acts_a, acts_b, device=device)
     else:
         sim_cos = np.zeros((acts_a.shape[1],acts_a.shape[1]))
 
@@ -1616,7 +1266,7 @@ def get_saes_similarities(
     else:
         random_cos = np.zeros_like(sim_cos).diagonal(0)
     #cos = time.time()
-    sim_topk = _topk_similarity_matrix(acts_a, acts_b, metric=metric, **kwargs)
+    sim_topk = _topk_similarity_matrix(acts_a, acts_b, metric=metric,device=device, **kwargs)
     #top = time.time()
     if method == "spearman":
         if device == "cuda":
@@ -1628,14 +1278,12 @@ def get_saes_similarities(
             a_use = torch.as_tensor(a_use, device=device)
             b_use = torch.as_tensor(b_use, device=device)
 
-
-
     if zscore:
         a_use = (a_use - a_use.mean(axis=0, keepdims=True)) / (a_use.std(axis=0, keepdims=True) + 1e-12)
         b_use = (b_use - b_use.mean(axis=0, keepdims=True)) / (b_use.std(axis=0, keepdims=True) + 1e-12)
     #rank = time.time()
     #sim_corr = _corr_similarity_matrix(a_use.copy(), b_use.copy())
-    sim_corr = _cos_similarity_matrix(a_use, b_use)
+    sim_corr = _cos_similarity_matrix(a_use, b_use,device=device)
     if get_random:
         random_corr = _get_random_similarity_matrix_torch(a_use, b_use, method="cos", N=25, fixed_sae=False)
     else:
@@ -1645,87 +1293,3 @@ def get_saes_similarities(
     #hungarian_res = align_concepts_hungarian(sim_corr, **kwargs)
     return {"cos_sim" : sim_cos, "cor_sim" : sim_corr, "topk_sim" : sim_topk,
      "cos_random":random_cos, "cor_random" : random_corr}
-
-
-def plot_dictionary_atoms(
-    sae: SparseAutoencoder,
-    *,
-    num_atoms: int = 16,
-    atoms_per_row: int = 4,
-    figsize: Tuple[int, int] = (10, 6),
-    save_path: Optional[Path] = None,
-    atom_indexes_bool = False,
-    atom_indexes = None
-) -> None:
-    """Visualise selected dictionary atoms (decoder columns) as 1‑D bar plots."""
-    
-    decW = _get_decoder_weight(sae)
-    if decW is None:
-        raise ValueError("Could not find decoder weight matrix for this SAE.")
-    num_atoms = min(num_atoms, int(decW.shape[1]))
-    cols = atoms_per_row
-    rows = math.ceil(num_atoms / cols)
-    fig, axes = plt.subplots(rows, cols, figsize=figsize, squeeze=False)
-    for i in range(num_atoms):
-        r, c = divmod(i, cols)
-        if atom_indexes_bool:
-            i = atom_indexes[i]
-
-        atom = sae.concept_vector(i).cpu().numpy()
-        axes[r][c].bar(range(len(atom)), atom)
-        axes[r][c].set_title(f"Atom {i}")
-        axes[r][c].set_xticks([])
-    for ax in axes.flat[num_atoms:]:
-        ax.axis("off")
-    plt.tight_layout()
-    if save_path is not None:
-        plt.savefig(save_path, dpi=150)
-        print(f"Dictionary figure saved to {save_path}")
-    else:
-        plt.show()
-
-
-def plot_top_k_images(
-    image_paths: List[Path],
-    data,
-    *,
-    cols: int = 5,
-    figsize: Tuple[int, int] = (12, 6),
-    save_path: Optional[Path] = None,
-    top_act = None,
-    stats = None,
-    neuron_nr = None
-) -> None:
-    """Display the images corresponding to the given indices in a grid."""
-    paths = []
-    for name in image_paths:
-        p = int(name.split("/")[2].split("_")[0])
-        paths.append(p)
-    rows = math.ceil(len(paths) / cols)
-    fig, axes = plt.subplots(rows, cols, figsize=figsize, squeeze=False)
-
-    for idx, p in enumerate(paths):
-        r, c = divmod(idx, cols)
-        try:
-            img = data[p]
-            axes[r][c].imshow(img)
-            axes[r][c].set_title( str(np.round(top_act[idx],5)), fontsize=8)
-            axes[r][c].axis("off")
-        except Exception as e:
-            axes[r][c].text(0.5, 0.5, f"Error:\n{e}", ha="center", va="center")
-            axes[r][c].axis("off")
-    # hide any empty axes
-    for ax in axes.flat[len(paths):]:
-        ax.axis("off")
-
-    plt.suptitle(f'Sparse Neuron {neuron_nr}, sparsity: {np.round(stats["sparsity"],2)}, mean_act: {np.round(stats["mean_activation"],2)}, entropy: {np.round(stats["label_entropy"],2)}')
-    plt.tight_layout()
-
-
-    if save_path is not None:
-        plt.savefig(save_path, dpi=150)
-        print(f"Image grid saved to {save_path}")
-    else:
-        plt.show()
-
-

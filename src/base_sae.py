@@ -180,15 +180,13 @@ class BatchTopKSparseAutoencoder(SparseAutoencoder):
         x_hat = self.decoder(z_sparse)
         return x_hat, z_sparse
 
-    def encode(self, x: torch.Tensor, only_z = True) -> torch.Tensor:
+    def encode(self, x: torch.Tensor ) -> torch.Tensor:
         with torch.no_grad():
             if self.use_circuits_implementation:
                 x = x - self.decoder.bias
             z = self.activation(self.encoder(x))
-            if only_z:
-                return z
             mask = _batchtopk_mask_flat(z, self.k, by_abs=self.by_abs)
             z_sparse = z * mask.to(z.dtype)
             x_hat = self.decoder(z_sparse)
-            return z, x_hat
+            return z
   

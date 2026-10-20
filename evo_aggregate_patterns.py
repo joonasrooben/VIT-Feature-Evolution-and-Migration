@@ -964,15 +964,8 @@ def compute_concept_scores(
 # 2) Wrapper: compute scores across reference epochs/layers
 # =========================================================
 
-def data_source(args):
-    data = np.load(f"./results/vit_in1k_s8/subset/evolution_patterns_e{args[0]}_l{args[1]}.npz")
-    stats = data["concepts"]
-    S = data["cor_res"]
-    epochs = data["epochs"]
-    return S, stats, epochs
-
-
 def compute_scores_for_reference_grid(
+    similarity_source: Any,
     *,
     reference_epochs: Sequence[float],
     reference_layers: Sequence[float],
@@ -999,7 +992,6 @@ def compute_scores_for_reference_grid(
             one row per reference point, aggregated across concepts.
     """
     import pandas as pd
-
     all_frames = []
 
     # Prevent accidental conflict with per-reference values.
@@ -1009,7 +1001,10 @@ def compute_scores_for_reference_grid(
 
     for ref_epoch in reference_epochs:
         for ref_layer in reference_layers:
-            S, stats, epochs = data_source((ref_epoch, ref_layer))
+            data = np.load(f"{similarity_source}/evolution_patterns_e{ref_epoch}_l{ref_layer}.npz")
+            stats = data["concepts"]
+            S = data["cor_res"]
+            epochs = data["epochs"]           
             concept_ids = np.arange(S.shape[0])[stats[:,0] > 0.001]
             df = compute_concept_scores(
                 S[concept_ids],
@@ -1414,90 +1409,87 @@ def layer_location_stats(weights, layers=None):
     }
 
 
-
-
-def data_source(args):
-    data = np.load(f"./sae_checkpoints/vit_imagenet_s8/evo_patterns/evolution_patterns_e{args[0]}_l{args[1]}.npz")
-    #data = np.load(f"./sae_checkpoints/vit_imagenet_mixed10_balanced_s7/evo_patterns/evolution_patterns_e{args[0]}_l{args[1]}.npz")
-    stats = data["concepts"]
-    S = data["cor_res"]
-    epochs = data["epochs"]
-    return S, stats, epochs
-
 # Multiple reference points:
 # similarity_by_ref[(ref_epoch, ref_layer)] -> [N, L, T]
-scores_df, summary_df = compute_scores_for_reference_grid(
-    reference_epochs=list(np.arange(100))+list(np.arange(100,280,10)) + list(np.arange(280,300)),
-    reference_layers=list(range(12)),
-    layer_values=np.arange(12),
-    denominator="all",
-    posterior="softmax",
-    beta=12.0,
-    onset_k=3,
-    disappearance_k=5,
+def main():
+    # Existing experiment setup, computation, and plotting.
     
-    start_end_fraction = 0.05,
-    stickiness_radius = 1.0,
-    reference_stickiness_radius = 1.0,
-    drift_threshold_layers = 1.0,
-    min_directional_efficiency = 0.02,
-    min_layer_localization = 0.5,
-    sticky_threshold = 0.70,
-    sticky_max_abs_drift_layers = 0.50,
-    eps = 1e-12,
-    max_width=4,
-    choice = "com",
+    scores_df, summary_df = compute_scores_for_reference_grid(
+        similarity_source= "./results/vit_in1k_s8/subset", # "./results/vit_in1k_mixed10_s7/subset",
+        reference_epochs=list(np.arange(100))+list(np.arange(100,280,10)) + list(np.arange(280,300)),
+        reference_layers=list(range(12)),
+        layer_values=np.arange(12),
+        denominator="all",
+        posterior="softmax",
+        beta=12.0,
+        onset_k=3,
+        disappearance_k=5,
+        
+        start_end_fraction = 0.05,
+        stickiness_radius = 1.0,
+        reference_stickiness_radius = 1.0,
+        drift_threshold_layers = 1.0,
+        min_directional_efficiency = 0.02,
+        min_layer_localization = 0.5,
+        sticky_threshold = 0.70,
+        sticky_max_abs_drift_layers = 0.50,
+        eps = 1e-12,
+        max_width=4,
+        choice = "com",
 
-)
-metrics = [
-    "emergence_rate_pct",
-    "disappearance_pct_emerged",
-    "mean_active_lifetime_duration",
-    "mean_persistence_fraction_after_emergence",
-    "deeper_migratory_pct",
-    "earlier_migratory_pct",
-    "stable_pct",
-    "wandering_pct",
-    "reference_anchor_match_pct_among_sticky",
-    "mean_layer_width_norm",
-    "mean_layer_entropy",
-    "mean_label_entropy",
-    "mean_signed_mean_drift_active",
-    "mean_signed_median_drift_active",
-    "spread_concepts_pct",
-    "n_valid_drift",
-    "n_concepts",
-    "n_emerged",
-    "disappearance_pct_all",
-    "mean_emergence_epoch",
-    "mean_disappearance_epoch",
-    "mean_active_lifetime_fraction",
-    "mean_persistence_fraction_until_disappearance",
-    "migratory_pct",
-    "reference_anchor_match_pct_all",
-    "mean_reference_layer_stickiness",
-    "mean_stabel_to_anchor",
-    "mean_layer_width",
-    "mean_layer_localization",
-    "mean_directional_efficiency",
-    "mean_path_active",
-    "mean_strength_salience",
-    "mean_peak_strength",
-    "mean_sparsity",
-    "mean_activation",
-]
+    )
+    metrics = [
+        "emergence_rate_pct",
+        "disappearance_pct_emerged",
+        "mean_active_lifetime_duration",
+        "mean_persistence_fraction_after_emergence",
+        "deeper_migratory_pct",
+        "earlier_migratory_pct",
+        "stable_pct",
+        "wandering_pct",
+        "reference_anchor_match_pct_among_sticky",
+        "mean_layer_width_norm",
+        "mean_layer_entropy",
+        "mean_label_entropy",
+        "mean_signed_mean_drift_active",
+        "mean_signed_median_drift_active",
+        "spread_concepts_pct",
+        "n_valid_drift",
+        "n_concepts",
+        "n_emerged",
+        "disappearance_pct_all",
+        "mean_emergence_epoch",
+        "mean_disappearance_epoch",
+        "mean_active_lifetime_fraction",
+        "mean_persistence_fraction_until_disappearance",
+        "migratory_pct",
+        "reference_anchor_match_pct_all",
+        "mean_reference_layer_stickiness",
+        "mean_stabel_to_anchor",
+        "mean_layer_width",
+        "mean_layer_localization",
+        "mean_directional_efficiency",
+        "mean_path_active",
+        "mean_strength_salience",
+        "mean_peak_strength",
+        "mean_sparsity",
+        "mean_activation",
+    ]
 
 
-# Heatmap matrices:
-heatmaps = make_aggregate_heatmaps(summary_df,metrics)
+    # Heatmap matrices:
+    heatmaps = make_aggregate_heatmaps(summary_df,metrics)
 
-# Plot default aggregate heatmaps:
+    # Plot default aggregate heatmaps:
 
-figs = plot_aggregate_heatmaps(
-    summary_df,
-    metrics,
-    save_path="./heatmaps/s8_full_v3",
-    dpi=300,
-    file_format="png",
-    datasettag = "ImageNet-1k" #"IN Mixed 10"
-)
+    figs = plot_aggregate_heatmaps(
+        summary_df,
+        metrics,
+        save_path="./heatmaps/s8_full_v3",
+        dpi=300,
+        file_format="png",
+        datasettag = "ImageNet-1k" #"IN Mixed 10"
+    )
+
+if __name__ == "__main__":
+    main()

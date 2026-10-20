@@ -9,6 +9,9 @@ __pycache__/
 *.npy
 *.h5
 
+# Generated checkpoints, activations, figures, and analysis tables.
+shapes3d_cpu/
+
 # C extensions
 *.so
 

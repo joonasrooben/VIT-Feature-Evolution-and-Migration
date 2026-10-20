@@ -8,9 +8,6 @@ import torch.nn as nn
 import yaml
 import timm
 
-from openood.datasets import get_dataloader
-from openood.utils.config import Config
-
 from torch.utils.data import DataLoader, Dataset
 from torchvision import datasets, transforms
 from torchvision.transforms import InterpolationMode

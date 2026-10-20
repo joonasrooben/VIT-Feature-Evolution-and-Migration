@@ -23,9 +23,10 @@ Parts of the code used in our work was adapted from the Github repositories such
 
 ### Citation
 ```bibtex
-@inproceedings{feature-evolution-migration-2026,
-  title  = {Feature Evolution and Migration during Vision Transformer Training},
-  year   = {2026},
-  note   = {Citation details to be added}
+@article{jarve2026feature,
+  title={Feature Evolution and Migration during Vision Transformer Training},
+  author={J{\"a}rve, Joonas and Aysel, Halil Ibrahim and Khajuria, Tarun and Kull, Meelis},
+  journal={arXiv preprint arXiv:2608.20134},
+  year={2026}
 }
 ```
