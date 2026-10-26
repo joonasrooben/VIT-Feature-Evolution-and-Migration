@@ -22,8 +22,6 @@ tied: false
 ref_epoch: 299
 ref_layer: 11
 fixed_sae: false
-only_plots: false 
-probing: false
 tag: _cls_only #tag for the folder in case of not standard training ["cls_only", "cls_only_tr"]
 test_patches: false
 train_saes: false 
@@ -32,14 +30,20 @@ trained_on: cls #"mix, cls, patches, None"
 want_images: true
 finetune_sae: false
 combined: true
-combined_images: true
-concept_types: false
 layer_nrs:
 - 0
 - 12
 vit_epochs:
 - 0
 - 300
+
+#plotting settings
+combined_images: true
+track_feature: false
+track_feature_id: 0
+concept_types: false
+only_plots: false 
+probing: false
 
 #global experiment settings
 cache_activations: false
@@ -52,6 +56,11 @@ verbose_every: 50
 checkpoint_folder: sae_checkpoints
 plots_dir: figs/sae_similarity
 results_dir: eval_results
+vit_checkpoint_dir: ../openood/OpenOOD/results/vit_tiny_ffcv
+activation_root:
+data_dir: /gpfs/space/projects/mlgroup/data/images_largescale/ #/tmp/imagenet_1k/
+imglist_path: /gpfs/space/projects/mlgroup/data/benchmark_imglist/imagenet/test_imagenet.txt #train_imagenet.txt
+log_path: #can be left empty
 
 #dataset settings
 img_size: 224

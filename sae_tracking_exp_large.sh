@@ -16,10 +16,7 @@
 set -euo pipefail
 
 export SCIPY_ARRAY_API=1
-##360
-##RE_VALUES=($(seq 98 100) $(seq 110 10 280) $(seq 281 299))
-##RE_VALUES=($(seq 281 299))
-RE_VALUES=($(seq 72 100))
+RE_VALUES=($(seq 0 100) $(seq 110 10 280) $(seq 281 299))
 RL_VALUES=($(seq 0 11))
 
 
@@ -47,9 +44,6 @@ echo "SLURM_ARRAY_TASK_ID=$TASK_ID"
 echo "Running with --re $RE --rl $RL"
 echo "CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES"
 
-python -u 2d_sae_track_independent_shapes3d.py \
+python -u sae_track_method.py \
     --re "$RE" \
     --rl "$RL" \
-
-##--config sae_exp_config_base_s7.yml 
-

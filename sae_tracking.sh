@@ -23,7 +23,7 @@
 #SBATCH -t 10:00:00
 
 export SCIPY_ARRAY_API=1
-python -u 2d_sae_track_independent_shapes3d.py --re 299 --rl 11 ##--config sae_exp_config_base_s7.yml 
+python -u sae_track_method.py --re 299 --rl 11 ##--config sae_exp_config_base_s7.yml 
 ##python -u evo_aggregate_patterns.py
 ##'./sae_checkpoints/vit_imagenet_mixed10_balanced_s7/refepoch_49_reflayer_11/eval_results/config.yaml'
 

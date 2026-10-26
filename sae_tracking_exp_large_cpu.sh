@@ -13,9 +13,8 @@ set -euo pipefail
 
 export SCIPY_ARRAY_API=1
 
-##RE_VALUES=($(seq 0 100) $(seq 110 10 290) 299)
-RE_VALUES=(0 100 200 299)
-##RE_VALUES=($(seq 51 100))
+RE_VALUES=($(seq 0 100) $(seq 110 10 290) 299)
+##RE_VALUES=(0 100 200 299)
 RL_VALUES=($(seq 0 11))
 
 
@@ -42,7 +41,7 @@ RL=${RL_VALUES[$RL_INDEX]}
 echo "SLURM_ARRAY_TASK_ID=$TASK_ID"
 echo "Running with --re $RE --rl $RL"
 
-python -u 2d_sae_track_independent_shapes3d.py \
+python -u sae_track_method.py \
     --re "$RE" \
     --rl "$RL"
 

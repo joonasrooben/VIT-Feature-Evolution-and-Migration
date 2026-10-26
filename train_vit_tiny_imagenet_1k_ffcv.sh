@@ -55,11 +55,6 @@ python vit_tiny_imagenet_train_ffcv.py \
 #  --max-resolution 256 \
 #  --num-workers 16
 
-#imagenet/train_imagenet.txt
-#imagenet200/train_mixed10_balanced.txt
-
-#/gpfs/space/projects/mlgroup/data/images_largescale/ \
-
 #python generate_acts_vit.py --ind_name shapes3d --epoch 49 --step 0 --num_classes 4 --seed 2 --total_epochs 50 --vit_size 768 --num_heads 3
 #python generate_acts_vit.py --ind_name shapes3d --epoch 45 --step 0 --num_classes 4 --seed 2 --total_epochs 50 --vit_size 768 --num_heads 3
 #python generate_acts_vit.py --ind_name shapes3d --epoch 15 --step 0 --num_classes 3 --seed 3 --total_epochs 150 --vit_size 768 --num_heads 3

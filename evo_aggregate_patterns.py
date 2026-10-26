@@ -1252,6 +1252,20 @@ def plot_aggregate_heatmaps(
 
     figures = {}
 
+    def make_pretty(name):
+        parts = name.split("_")
+        result = ""
+        for part in parts:
+            if part == "pct":
+                result += "Percentage "
+            elif part == "n":
+                result += "Number of "
+            elif part == "concepts":
+                result += "Features "
+            else:
+                result += part.capitalize() + " "
+        return result
+
     def _fmt(x):
         try:
             return f"{float(x):g}"
@@ -1273,7 +1287,7 @@ def plot_aggregate_heatmaps(
         arr = H.to_numpy(dtype=float)
         im = ax.imshow(arr, aspect="auto", origin=origin)
 
-        ax.set_title(f"{datasettag} : {metric}")
+        ax.set_title(f"{datasettag} : {make_pretty(metric)}")
         ax.set_xlabel("Reference epoch")
         ax.set_ylabel("Reference layer")
 

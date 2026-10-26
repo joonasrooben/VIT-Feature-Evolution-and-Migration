@@ -86,7 +86,7 @@ def build_transforms(image_size):
 def build_dataloaders(cfg):
     tf = build_transforms(cfg["img_size"])
     #data_root = "/gpfs/space/projects/mlgroup/data/images_largescale/"
-    data_root = "/tmp/imagenet_1k/"
+    data_root = cfg.get("data_dir", "/tmp/imagenet_1k/")
     return_dict = {}
     train_set = OpenOODImglistDataset(cfg["train_imglist"], data_root, transform=tf)
     test_set = OpenOODImglistDataset(cfg["test_imglist"], data_root, transform=tf)
@@ -226,13 +226,13 @@ def get_model_outputs(
             if return_name:
                 names_all.extend(names)
 
-            classes_all.append(y)
+            classes_all.append(y.cpu())
 
             cls_layers, _, logits = collect_hidden_states_timm(
                 model, x, need_patches=False
             )
-            cls_all.append(cls_layers)
-            logits_all.append(logits)
+            cls_all.append(cls_layers.cpu())
+            logits_all.append(logits.cpu())
 
             if patches_on:
                 if train:
@@ -246,7 +246,7 @@ def get_model_outputs(
                 _, patch_layers, _ = collect_hidden_states_timm(
                     model, x_patch, need_patches=True
                 )
-                patches_all.append(patch_layers)
+                patches_all.append(patch_layers.cpu())
 
     out = {
         "logit": torch.cat(logits_all, dim=0),
@@ -264,14 +264,15 @@ def get_model_outputs(
 
 
 def generate_acts_vit(args):
-    openood_path = Path("../openood/OpenOOD")
+    openood_path = Path(args.get("activation_root", "../openood/OpenOOD"))
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     ind_name = args["ind_name"]
     num_classes = args["num_classes"]
 
-    #ckpt_path = openood_path / f"results/vit_tiny_a1_mixed/epoch_{args['epoch']:03d}.ckpt"
-    ckpt_path = openood_path / f"results/vit_tiny_ffcv/epoch_{args['epoch']:03d}.ckpt"
+    checkpoint_dir = Path(args.get("vit_checkpoint_dir", openood_path / "results/vit_tiny_ffcv"))
+    ckpt_path = checkpoint_dir / f"epoch_{args['epoch']:03d}.ckpt"
 
 
     # Rebuild the SAME architecture that produced the checkpoint.
@@ -288,9 +289,6 @@ def generate_acts_vit(args):
     load_timm_checkpoint(net, ckpt_path)
     net = net.to(device)
     net.eval()
-
-    #with open(openood_path / "results/vit_tiny_a1_mixed/config_gen.yml", "r") as stream:
-    #    conf = Config(yaml.safe_load(stream))
 
     loader_dict = build_dataloaders(args)
     ind_dict = list(loader_dict.keys())

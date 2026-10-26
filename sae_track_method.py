@@ -156,9 +156,6 @@ def _load_all_data_cached(
                 #args_dict_2["val_imglist"] = "/gpfs/space/projects/mlgroup/data/benchmark_imglist/imagenet200/val_mixed10_balanced.txt"
                 args_dict_2["test_imglist"] = "/gpfs/space/projects/mlgroup/data/benchmark_imglist/imagenet/test_imagenet.txt"
                 generate_acts_vit(args_dict_2)
-            else:
-                from generate_acts_vit_fun import generate_acts_vit
-                generate_acts_vit(args_dict_2)
 
 
         data = load_all_data(
@@ -455,6 +452,153 @@ def _evaluate_run_combined(
     np.savez(results_dir / f"evolution_patterns_e{ref_epoch}_l{ref_layer}.npz", cor_res = cor_res, top_res =top_res, concepts = np.array(stats_np),epochs = epochs, cka = ckas, pre_loss = pre_losses)
     return None
 
+
+def _track_feature(
+    run_idx: int,
+    args: Dict[str, Any],
+    epochs_windowed: List[int],
+    layers: List[int],
+    ref_epoch: int,
+    ref_layer: int,
+    cache: Optional[Dict[Tuple[int, int], Dict[str, Any]]],
+    steps: int,
+    concept: int,
+) -> List[Dict[str, Any]]:
+    """Match one fixed reference feature at successive saved checkpoints."""
+    eval_device = _device_or_default(args.get("eval_device"))
+    
+    results_dir = Path(args["results_dir"]).parent.parent / "evo_patterns" / "tracks"
+    evo_dir = Path(args["results_dir"]).parent.parent / "evo_patterns"
+    _ensure_dir(results_dir)
+
+    plots_dir = Path(args["plots_dir"]) / f"run_{run_idx}" /f"combined_{args['tag']}"
+    _ensure_dir(plots_dir)
+
+    ref_ckpt = _checkpoint_path(args, ref_epoch, ref_layer, run_idx)
+    if not ref_ckpt.exists():
+        raise FileNotFoundError(f"Missing reference SAE checkpoint: {ref_ckpt}")
+    ref_sae = _load_sae_for_eval(ref_ckpt, eval_device)
+    ref_data = _load_all_data_cached(ref_epoch, ref_layer, args, cache)
+    ref_latents = torch.from_numpy(ref_data[args["eval_split"]]["activations"]).float().to(eval_device)
+    del ref_data 
+    with torch.no_grad():
+        ref_sae_latents = ref_sae.encode(ref_latents).cpu()
+
+    #get the next step coordinates
+    evo_pat_path = evo_dir / f"evolution_patterns_e{ref_epoch}_l{ref_layer}.npz"
+    evo_patterns = np.load(evo_pat_path)
+    cor_res = evo_patterns["cor_res"].copy()
+    saved_epochs = evo_patterns["epochs"].tolist()
+    if saved_epochs != list(epochs_windowed):
+        raise ValueError("epochs_windowed must match the saved pattern's epoch axis.")
+    if cor_res.shape[1:] != (len(layers), len(saved_epochs)):
+        raise ValueError("Pattern axes must match the supplied layers and epochs.")
+    if ref_layer not in layers or ref_epoch not in saved_epochs:
+        raise ValueError("Reference coordinates must belong to the saved grid.")
+    if not 0 <= concept < cor_res.shape[0]:
+        raise ValueError("concept is outside the saved feature axis.")
+    ref_index = saved_epochs.index(ref_epoch)
+    if not isinstance(steps, (int, np.integer)) or not 0 <= steps < len(saved_epochs) - ref_index:
+        raise ValueError("steps must fit within the saved checkpoints after ref_epoch.")
+    records = []
+    
+    for step in range(steps):
+        print("Step:", step)
+        #get the refernce point data
+
+        epoch_index = ref_index + step + 1
+        epoch = saved_epochs[epoch_index]
+        layer_index = int(cor_res[concept, :, epoch_index].argmax())
+        layer = layers[layer_index]
+        #get the similarity to that point and fint the matching concept nr
+        data = _load_all_data_cached(epoch, layer, args, cache,eval_mode = True)
+        ckpt_latents = torch.from_numpy(data).float().to(eval_device)  
+
+        #independent SAE
+        ckpt = _checkpoint_path(args, epoch, layer, run_idx)
+        if not ckpt.exists():
+            raise FileNotFoundError(f"Missing SAE checkpoint: {ckpt}")
+        sae = _load_sae_for_eval(ckpt, eval_device)
+        with torch.no_grad():
+            acts_a = sae.encode(ckpt_latents)
+                
+        sim_res_dict = get_saes_similarities(
+            acts_a.to(eval_device),
+            ref_sae_latents.to(eval_device),
+            False,
+            return_cos = False,
+            method=args["align_method"],
+            min_sim=args["align_min_sim"],
+            compute_stability=args["align_compute_stability"],
+            compute_chance=args["align_compute_chance"],
+            device=eval_device,
+            return_similarity = True,
+            k=args["topk_k"],
+            metric=args["topk_metric"],
+            threshold=args["topk_threshold"],
+            act_threshold=args["topk_act_threshold"]
+        )
+            #cor_res[:,li,ei] = sim_res_dict["cor_sim"].max(0) 
+        indep_concept, indep_sim = sim_res_dict["cor_sim"].T[concept].argmax(), sim_res_dict["cor_sim"].T[concept].max()
+        print(indep_concept,indep_sim)
+        del sim_res_dict, acts_a
+
+        ## FIXED SAE
+        with torch.no_grad():
+            acts_a = ref_sae.encode(ckpt_latents)
+
+        sim_res_dict = get_saes_similarities(
+            acts_a.to(eval_device),
+            ref_sae_latents.to(eval_device),
+            False,
+            return_cos = False,
+            method=args["align_method"],
+            min_sim=args["align_min_sim"],
+            compute_stability=args["align_compute_stability"],
+            compute_chance=args["align_compute_chance"],
+            device=eval_device,
+            return_similarity = True,
+            k=args["topk_k"],
+            metric=args["topk_metric"],
+            threshold=args["topk_threshold"],
+            act_threshold=args["topk_act_threshold"]
+        )
+        fixed_concept, fixed_sim = concept, sim_res_dict["cor_sim"][concept][concept]
+        print(fixed_concept,fixed_sim)
+        max_index = np.argmax([fixed_sim, indep_sim])
+        concept_buf = [fixed_concept, indep_concept][max_index]
+        #ref_epoch, ref_layer = epoch, layer
+        expected = cor_res[concept, layer_index, epoch_index]
+        if not np.isclose(expected, max(fixed_sim, indep_sim), atol=1e-3, rtol=0):
+            raise ValueError("Recomputed match disagrees with the saved combined pattern.")
+        match_kind = "fixed" if max_index == 0 else "independent"
+        # A fixed readout belongs to the original SAE, not the target's SAE.
+        match_epoch, match_layer = (ref_epoch, ref_layer) if max_index == 0 else (epoch, layer)
+        records.append(dict(
+            step=step + 1, reference_epoch=int(ref_epoch), reference_layer=int(ref_layer),
+            reference_concept=int(concept), epoch=int(epoch), layer=int(layer),
+            match_kind=match_kind, matched_concept=int(concept_buf),
+            matched_sae_epoch=int(match_epoch), matched_sae_layer=int(match_layer),
+            fixed_similarity=float(fixed_sim), independent_similarity=float(indep_sim),
+            combined_similarity=float(expected),
+        ))
+        del sim_res_dict, data, ckpt_latents
+        torch.cuda.empty_cache()
+        if args.get("track_plots", True):
+            match_path = evo_dir / f"evolution_patterns_e{match_epoch}_l{match_layer}.npz"
+            if not match_path.exists():
+                _evaluate_run_combined(
+                    run_idx, args, epochs_windowed, layers, match_epoch, match_layer, cache
+                )
+            _save_concept_evo_pattern(
+                run_idx, args, epochs_windowed, layers, match_epoch, match_layer,
+                "max", args.get("want_images", False), eval_device, concept_id=int(concept_buf),
+            )
+
+    track_path = results_dir / f"track_run_{run_idx}_ref_e{ref_epoch}_l{ref_layer}_concept{concept}.json"
+    track_path.write_text(json.dumps(records, indent=2), encoding="utf-8")
+    return records
+
 def _evaluate_loss(
     run_idx: int,
     args: Dict[str, Any],
@@ -501,14 +645,15 @@ def _save_concept_evo_pattern(
     ref_layer: int,
     method : str = "max",
     want_images : bool = True,
-    eval_device = None
+    eval_device = None,
+    concept_id: Optional[int] = None,
 ) -> None:
 
     results_dir = Path(args["results_dir"]).parent.parent / "evo_patterns"
     evo_pat_path = results_dir / f"evolution_patterns_e{ref_epoch}_l{ref_layer}.npz"
     evo_patterns = np.load(evo_pat_path)
-    total_nr_concepts = args["vit_size"]//4*args["expansion_coef"]
-    
+    total_nr_concepts = evo_patterns["cor_res"].shape[0]
+
     cor_res = evo_patterns["cor_res"]
     top_res = evo_patterns["top_res"]
     try:
@@ -610,14 +755,20 @@ def _save_concept_evo_pattern(
             np.savez(plots_dir_2 / f"a_concept_types_e{ref_epoch}_l{ref_layer}_{activation_threshold}.npz", concept_types = concept_types, concept_dists =class_distributions)
 
     if args.get("combined_images", False):
-        for i in range(total_nr_concepts):
+        if concept_id is not None and not 0 <= concept_id < total_nr_concepts:
+            raise ValueError("concept_id is outside the saved feature axis.")
+        concept_indices = range(total_nr_concepts) if concept_id is None else [int(concept_id)]
+        for i in concept_indices:
+ 
             acts_ref_i = acts_ref.T[i]
             concept_i = concepts_stats[i]
-            if i > 60:
+            if concept_id is None: #and i > 60:
                 break
-            if (np.sum(cor_res[i]) == 0) or (sum(acts_ref_i > 0) < 15) or (concept_i[0] < 0.001) or (max(acts_ref_i) < 0.2) or (concept_i[-1] < 1):
+            if concept_id is None and (
+                (np.sum(cor_res[i]) == 0) or (sum(acts_ref_i > 0) < 15)
+                or (concept_i[0] < 0.001) or (max(acts_ref_i) < 0.2) or (concept_i[-1] < 1)
+            ):
                 continue
-
 
 
             titles = [f"Ref: e{ref_epoch} l{ref_layer}. Sparsity {np.round(concept_i[0],3)}; Mean  act. {np.round(concept_i[1],3)}; Lab. entropy {np.round(concept_i[2],3)}",
@@ -1198,8 +1349,6 @@ def main(args) -> None:
 
     all_topk = np.full((args_dict["sae_runs"], len(layers), len(epochs)), np.nan, dtype=float)
 
-
-
     print(eval_device)
     for run_idx in range(args_dict["sae_runs"]):
         
@@ -1212,9 +1361,6 @@ def main(args) -> None:
             ref_data = _load_all_data_cached(ref_epoch, ref_layer, args_dict, cache)
         
         if not args_dict["only_plots"]:
-#            with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], profile_memory=True, ) as prof:
-#                with record_function("model_inference")
-            
             if args_dict.get("combined",False):
                 ###implement the epochs and layers windwonf
                 half_window = 50      # because total window is 100
@@ -1239,7 +1385,8 @@ def main(args) -> None:
                 else:
                     print("CKPT existed")
                 _save_concept_evo_pattern(run_idx ,args_dict, epochs_windowed, layers, ref_epoch, ref_layer, "max", args_dict["want_images"], eval_device)
-
+                if args_dict.get("track_feature",False):
+                    _track_feature(run_idx, args_dict, epochs_windowed, layers, ref_epoch, ref_layer,cache, steps = 50, concept =args_dict.get("track_feature_id",0))
                 break
 
             else:
