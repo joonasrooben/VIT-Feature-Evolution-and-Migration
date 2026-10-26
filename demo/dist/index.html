@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Explore how sparse features evolve across the depth and training time of a vision transformer.">
+  <title>Feature Evolution Explorer</title>
+  <link rel="stylesheet" href="styles.css?v=best-match-1">
+  <script src="app.js?v=best-match-1" defer></script>
+</head>
+<body>
+  <header>
+    <div class="masthead"><span class="wordmark">TIME × DEPTH</span><a href="https://arxiv.org/abs/2608.20134" target="_blank" rel="noreferrer">Read the paper ↗</a></div>
+    <h1>How a feature evolves.</h1>
+    <p class="intro">Explore sparse features across vision transformer training. Choose a reference, inspect its images, and follow its matches through time and depth.</p>
+  </header>
+  <main>
+    <form id="controls" class="controls" aria-label="Reference feature selection">
+      <label>Experiment<select id="dataset" disabled></select></label>
+      <label>Reference epoch<select id="epoch" disabled></select></label>
+      <label>Reference layer<select id="layer" disabled></select></label>
+      <label>Feature ID<div class="feature-input"><input id="feature" type="number" min="0" step="1" disabled><button type="submit">Go</button></div></label>
+      <button id="share" type="button" class="subtle">Copy link</button>
+    </form>
+    <p id="status" class="status" role="status" aria-live="polite">Loading experiment…</p>
+    <div class="workspace" id="workspace" hidden>
+      <aside class="gallery-panel">
+        <div class="section-label"><h2>Feature atlas</h2><span id="feature-count"></span></div>
+        <label class="check"><input id="active-only" type="checkbox" checked> Hide inactive features</label>
+        <div id="gallery" class="gallery"></div>
+        <div class="pagination"><button id="previous" type="button" aria-label="Previous feature page">←</button><span id="page-label"></span><button id="next" type="button" aria-label="Next feature page">→</button></div>
+      </aside>
+      <section class="detail-panel" aria-labelledby="detail-title">
+        <div class="detail-heading"><div><span class="eyebrow">REFERENCE FEATURE</span><h2 id="detail-title"></h2></div><span id="reference-label" class="pill"></span></div>
+        <div id="stats" class="stats"></div>
+        <div class="map-heading"><h3>Evolution map</h3><span class="hint">Select a cell to explore its feature matches ↓</span></div>
+        <div id="heatmap" class="heatmap"></div>
+        <div class="legend"><span>0</span><span class="gradient"></span><span>1</span><span class="legend-caption">Combined Spearman similarity</span></div>
+        <p class="caption">★ Reference SAE. Each column is a saved checkpoint; each row is a transformer layer. Colour uses a shared 0–1 scale; negative scores are shown at 0. Outlined cell: selected target.</p>
+        <div class="map-heading"><h3>Top activating images</h3><span id="image-context" class="hint"></span></div>
+        <div id="images" class="image-grid"></div>
+        <section class="match-comparison" aria-labelledby="best-match-title" aria-live="polite">
+          <div class="map-heading"><h3 id="best-match-title">Best match · Top activating images</h3></div>
+          <p id="best-match-context" class="hint"></p>
+          <div id="best-match-images" class="image-grid"></div>
+        </section>
+      </section>
+    </div>
+    <section id="neighbour-section" class="neighbour-section" hidden aria-labelledby="neighbour-title">
+      <div class="neighbour-heading"><div><span class="eyebrow">FOLLOW A MATCH</span><h2 id="neighbour-title">Features at the selected cell</h2></div><span id="target-score" class="pill"></span></div>
+      <p class="caption">These are features from the <strong>target SAE</strong>, ranked by Spearman correlation with the reference feature’s activations on the same images. The map combines independent-SAE matches with the original SAE’s fixed readout, so its score can be higher than the matches below. Opening a card makes that feature the new reference.</p>
+      <div id="neighbours" class="neighbours" aria-live="polite"></div>
+    </section>
+    <details class="method"><summary>What am I looking at?</summary><p>A feature belongs to a specific SAE at a specific epoch and layer. Its evolution map asks how similarly that feature activates across the training grid. The colour is the maximum of the best independent-SAE match and the original SAE’s fixed readout. A fixed readout retains the original feature’s identity; it is not a feature ID in the target SAE.</p><p>Activating images come from the selected reference’s evaluation split and use the repository’s <code>encode()</code> output. Matching is directional: opening a neighbour computes the view from that new reference. A high score suggests similar activation profiles; it does not guarantee a shared semantic concept.</p><p id="provenance"></p></details>
+  </main>
+  <footer>Feature Evolution and Migration during Vision Transformer Training <span>Järve, Aysel, Khajuria &amp; Kull · CIKM 2026</span></footer>
+</body>
+</html>
