@@ -21,6 +21,10 @@ We provide a tutorial of how to use our methodology playing out the full pipelin
 
 We also provide an optional alternative to step-by-step mehtod described in the notebook via a compact script to rerun the full IN-1k pipeline using `run_full_pipeline.sbatch` that uses `run_full_pipeline.py` that is explained in the `FULL_PIPELINE_SETUP.MD`.
 
+### Interactive results browser
+
+[Demo](https://joonasrooben.github.io/VIT-Feature-Evolution-and-Migration/) is available for the static feature browser, exporting the Shapes3D notebook results. The browser shows feature evolution maps, top activating images, and clickable cross-SAE matches at each epoch-layer cell.
+
 ### Acknowledegement
 
 Parts of the code used in our work was adapted from the Github repositories such as: [OpenOOD](https://github.com/Jingkang50/OpenOOD/tree/main).

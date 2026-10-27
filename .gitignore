@@ -11,6 +11,12 @@ __pycache__/
 
 # Generated checkpoints, activations, figures, and analysis tables.
 shapes3d_cpu/
+.demo-cache/
+.venv-demo/
+.demo-deploy/
+
+# Rebuild browser data with demo/export_demo.py; keep large generated results out of Git.
+demo/dist/data/
 
 # C extensions
 *.so
