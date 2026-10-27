@@ -285,6 +285,41 @@ h3 {
   max-width:100%;
   padding-bottom:4px
 }
+.accuracy-chart {
+  overflow-x:auto;
+  max-width:100%
+}
+.accuracy-chart svg {
+  display:block;
+  width:100%;
+  min-width:560px
+}
+.accuracy-chart text {
+  font:11px system-ui;
+  fill:var(--muted)
+}
+.accuracy-chart .accuracy-line {
+  fill:none;
+  stroke:#21877f;
+  stroke-width:2
+}
+.accuracy-chart .accuracy-point {
+  fill:#21877f
+}
+.accuracy-chart .accuracy-point:focus {
+  outline:none;
+  stroke:var(--ink);
+  stroke-width:3
+}
+.accuracy-chart .reference-marker {
+  stroke:var(--ink);
+  stroke-width:1.5
+}
+.accuracy-chart .target-marker {
+  stroke:var(--accent);
+  stroke-width:2;
+  stroke-dasharray:5 4
+}
 .heatmap svg {
   display:block;
   width:100%;

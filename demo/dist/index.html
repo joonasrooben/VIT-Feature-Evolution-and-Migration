@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Explore how sparse features evolve across the depth and training time of a vision transformer.">
   <title>Feature Evolution Explorer</title>
-  <link rel="stylesheet" href="styles.css?v=best-match-1">
-  <script src="app.js?v=best-match-1" defer></script>
+  <link rel="stylesheet" href="styles.css?v=accuracy-1">
+  <script src="app.js?v=accuracy-1" defer></script>
 </head>
 <body>
   <header>
@@ -33,6 +33,11 @@
       <section class="detail-panel" aria-labelledby="detail-title">
         <div class="detail-heading"><div><span class="eyebrow">REFERENCE FEATURE</span><h2 id="detail-title"></h2></div><span id="reference-label" class="pill"></span></div>
         <div id="stats" class="stats"></div>
+        <section aria-labelledby="accuracy-title">
+          <div class="map-heading"><h3 id="accuracy-title">Model accuracy</h3><span id="accuracy-context" class="hint"></span></div>
+          <div id="accuracy-chart" class="accuracy-chart"></div>
+          <p id="accuracy-caption" class="caption" hidden>Validation top-1 accuracy on the saved epoch grid. Solid marker: reference epoch; dashed marker: selected target epoch. Missing measurements leave gaps.</p>
+        </section>
         <div class="map-heading"><h3>Evolution map</h3><span class="hint">Select a cell to explore its feature matches ↓</span></div>
         <div id="heatmap" class="heatmap"></div>
         <div class="legend"><span>0</span><span class="gradient"></span><span>1</span><span class="legend-caption">Combined Spearman similarity</span></div>

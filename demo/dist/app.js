@@ -113,7 +113,64 @@ function renderGallery() {
   $("page-label").textContent = `${state.page+1} / ${pages}`;
   $("previous").disabled = state.page === 0; $("next").disabled = state.page === pages-1;
 }
+function renderAccuracy() {
+  const accuracy=state.manifest.accuracy, ref=state.ref;
+  $("accuracy-context").textContent="";
+  $("accuracy-caption").hidden=true;
+  if(!accuracy) {
+    $("accuracy-chart").replaceChildren(node("p","empty","Accuracy measurements are not available for this experiment."));
+    return;
+  }
+  if(!Array.isArray(accuracy.epochs) || !Array.isArray(accuracy.values) || accuracy.epochs.length!==accuracy.values.length ||
+     !accuracy.epochs.length || new Set(accuracy.epochs).size!==accuracy.epochs.length ||
+     !accuracy.epochs.every(e=>Number.isInteger(e)&&e>=0) ||
+     !accuracy.values.every(v=>Number.isFinite(v)&&v>=0&&v<=1)) {
+    $("accuracy-chart").replaceChildren(node("p","empty","Accuracy data is invalid: expected unique epochs and values between 0 and 1."));
+    return;
+  }
+  const values=new Map(accuracy.epochs.map((e,i)=>[e,accuracy.values[i]]));
+  const target=state.manifest.points.find(p=>p.id===state.target);
+  const describe=epoch=>values.has(epoch)?`${(values.get(epoch)*100).toFixed(1)}%`:"unavailable";
+  $("accuracy-context").textContent=`Reference e${ref.epoch}: ${describe(ref.epoch)} · Target e${target.epoch}: ${describe(target.epoch)}`;
+  if(!ref.epochs.some(e=>values.has(e))) {
+    $("accuracy-chart").replaceChildren(node("p","empty","No accuracy measurements are available for the displayed epochs."));
+    return;
+  }
+  const width=Math.max(650,ref.epochs.length*20+70),cellW=(width-70)/ref.epochs.length;
+  const x=i=>45+(i+.5)*cellW,y=value=>135-value*115;
+  const drawing=svg("svg",{viewBox:`0 0 ${width} 180`,role:"group","aria-label":"Validation top-1 accuracy by saved epoch"});
+  for(const percent of [0,25,50,75,100]) {
+    drawing.append(svg("line",{x1:45,x2:width-25,y1:y(percent/100),y2:y(percent/100),stroke:"#dedfd7"}));
+    drawing.append(svg("text",{x:38,y:y(percent/100)+4,"text-anchor":"end"},`${percent}%`));
+  }
+  for(const [epoch,kind,label] of [[ref.epoch,"reference","Reference"],[target.epoch,"target","Selected target"]]) {
+    const i=ref.epochs.indexOf(epoch);
+    if(i>=0) {
+      const marker=svg("line",{x1:x(i),x2:x(i),y1:15,y2:140,class:`${kind}-marker`,"data-epoch":epoch});
+      marker.append(svg("title",{},`${label} epoch ${epoch}: ${describe(epoch)}`));drawing.append(marker);
+    }
+  }
+  let path="",connected=false;
+  ref.epochs.forEach((epoch,i)=>{
+    if(!values.has(epoch)) {connected=false;return;}
+    path+=`${connected?"L":"M"}${x(i)},${y(values.get(epoch))} `;connected=true;
+  });
+  drawing.append(svg("path",{d:path,class:"accuracy-line"}));
+  const stride=Math.max(1,Math.ceil(ref.epochs.length/28));
+  ref.epochs.forEach((epoch,i)=>{
+    if(i%stride===0 || i===ref.epochs.length-1)
+      drawing.append(svg("text",{x:x(i),y:155,"text-anchor":"middle"},epoch));
+    if(!values.has(epoch))return;
+    const label=`Epoch ${epoch}: validation top-1 accuracy ${describe(epoch)}`;
+    const point=svg("circle",{cx:x(i),cy:y(values.get(epoch)),r:3.5,class:"accuracy-point",tabindex:0,role:"img","aria-label":label});
+    point.append(svg("title",{},label));drawing.append(point);
+  });
+  drawing.append(svg("text",{x:width/2,y:176,"text-anchor":"middle"},"Saved training epoch"));
+  $("accuracy-chart").replaceChildren(drawing);
+  $("accuracy-caption").hidden=false;
+}
 function renderMap() {
+  renderAccuracy();
   const ref = state.ref, data = state.data;
   const width = Math.max(650, ref.epochs.length*20+70), cellW=(width-70)/ref.epochs.length, cellH=36;
   const height = ref.layers.length*cellH+75;
