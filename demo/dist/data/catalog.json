@@ -1,1 +1,1 @@
-{"schema_version":1,"datasets":[{"id":"shapes3d-full","title":"Shapes3D \u00b7 ViT-Tiny","manifest":"shapes3d-full/manifest.json"}]}
+{"schema_version":1,"datasets":[{"id":"shapes3d-new","title":"Shapes3d \u00b7 ViT-Tiny (6 layers)","manifest":"shapes3d-new/manifest.json"}]}
