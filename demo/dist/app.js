@@ -2,7 +2,7 @@
 
 const $ = (id) => document.getElementById(id);
 const state = { catalog: null, manifest: null, base: null, ref: null, data: null,
-  feature: 0, target: null, page: 0, images: [], dataset: null };
+  feature: 0, target: null, page: 0, images: [], epochs: [], dataset: null };
 const referenceCache = new Map();
 const matchCache = new Map();
 let navigation = 0;
@@ -11,6 +11,83 @@ let routeNavigation = 0;
 const PAGE_SIZE = 12;
 const NS = "http://www.w3.org/2000/svg";
 const palette = [[68,1,84],[59,82,139],[33,145,140],[94,201,98],[253,231,37]];
+
+function decodeCompactPatterns(ref, buffer) {
+  const kept = ref.feature_ids;
+  if (!Array.isArray(kept) ||
+      kept.some((id, i) => !Number.isInteger(id) ||
+        id < 0 || id >= ref.features ||
+        (i > 0 && id <= kept[i - 1]))) {
+    throw new Error("Invalid compact feature IDs.");
+  }
+
+  const stride = ref.layers.length * ref.epochs.length;
+  const count = kept.length * stride;
+
+  if (buffer.byteLength !== 4 * count) {
+    throw new Error("Invalid compact pattern dimensions.");
+  }
+
+  const ids = new Uint16Array(buffer, 0, count);
+  const mapCodes = new Uint8Array(buffer, 2 * count, count);
+  const scoreCodes = new Uint8Array(buffer, 3 * count, count);
+  const maps = new Float32Array(ref.features * stride).fill(NaN);
+  const rows = new Map();
+
+  kept.forEach((featureId, row) => {
+    rows.set(featureId, row);
+    for (let cell = 0; cell < stride; cell++) {
+      const q = mapCodes[row * stride + cell];
+      maps[featureId * stride + cell] = q === 255 ? NaN : q / 127 - 1;
+    }
+  });
+
+  return { maps, matches: { ids, scoreCodes, rows } };
+}
+
+async function matchingFeatures(ref, data, feature, target, li, ei) {
+  if (data.matches) {
+    const row = data.matches.rows.get(feature);
+    if (row === undefined) return [];
+
+    const offset = (row * ref.layers.length + li) * ref.epochs.length + ei;
+    const id = data.matches.ids[offset];
+    const q = data.matches.scoreCodes[offset];
+
+    if (id === 65535) return [];
+    if (q < 127 || q === 255) {
+      throw new Error("Invalid compact positive-match score.");
+    }
+
+    return [{ id, score: q / 127 - 1 }];
+  }
+
+  const url = new URL(`${ref.id}/matches/${target}.bin`, state.base);
+  const buffer = await cached(
+    matchCache, url.href, () => request(url, "binary"), 16
+  );
+
+  if (buffer.byteLength < 8) {
+    throw new Error("Invalid feature-match header.");
+  }
+
+  const header = new DataView(buffer);
+  const rows = header.getUint32(0, true);
+  const k = header.getUint32(4, true);
+
+  if (rows !== ref.features || !k ||
+      buffer.byteLength !== 8 + rows * k * 8) {
+    throw new Error("Invalid feature-match dimensions.");
+  }
+
+  const ids = new Uint32Array(buffer, 8, rows * k);
+  const scores = new Float32Array(buffer, 8 + rows * k * 4, rows * k);
+
+  return Array.from({ length: k }, (_, rank) => ({
+    id: ids[feature * k + rank],
+    score: scores[feature * k + rank],
+  })).filter(match => Number.isFinite(match.score) && match.score > 0);
+}
 
 function colour(value) {
   if (!Number.isFinite(value)) return "#d9dcd6";
@@ -50,27 +127,36 @@ async function cached(cache, key, loader, limit) {
 }
 function findRef(id) { return state.manifest.references.find((r) => r.id === id); }
 async function referenceData(ref) {
+  const compact = state.manifest.schema_version === 2;
   const base = new URL(`${ref.id}/`, state.base);
   return cached(referenceCache, base.href, async () => {
     const [buffer, features, stats] = await Promise.all([
-      request(new URL("maps.f32", base), "binary"), request(new URL("features.json", base)), request(new URL("stats.json", base))
+      request(new URL(compact ? (ref.patterns_file || "patterns.bin") : "maps.f32", base), "binary"), request(new URL("features.json", base)), request(new URL("stats.json", base))
     ]);
-    const maps = new Float32Array(buffer);
-    if (maps.length !== ref.shape.reduce((a, b) => a*b, 1) || features.length !== ref.features || stats.length !== ref.features)
+    const decoded = compact
+      ? decodeCompactPatterns(ref, buffer)
+      : { maps: new Float32Array(buffer), matches: null };
+
+    if (decoded.maps.length !== ref.shape.reduce((a, b) => a * b, 1) ||
+        features.length !== ref.features ||
+        stats.length !== ref.features) {
       throw new Error("The exported map and feature metadata have different dimensions.");
-    return { maps, features, stats };
+    }
+
+    return { ...decoded, features, stats };
   }, 3);
 }
 function mapValue(ref, data, feature, li, ei) {
+  if(li<0 || ei<0) return NaN;
   return data.maps[(feature*ref.layers.length+li)*ref.epochs.length+ei];
 }
 function miniature(ref, data, feature) {
   const canvas = document.createElement("canvas");
-  canvas.width = ref.epochs.length; canvas.height = ref.layers.length;
+  canvas.width = state.epochs.length; canvas.height = ref.layers.length;
   canvas.setAttribute("aria-hidden", "true");
   const context = canvas.getContext("2d");
-  for (let l=0; l<ref.layers.length; l++) for (let e=0; e<ref.epochs.length; e++) {
-    context.fillStyle = colour(mapValue(ref, data, feature, l, e)); context.fillRect(e,l,1,1);
+  for (let l=0; l<ref.layers.length; l++) for (let e=0; e<state.epochs.length; e++) {
+    context.fillStyle = colour(mapValue(ref, data, feature, l, ref.epochs.indexOf(state.epochs[e]))); context.fillRect(e,l,1,1);
   }
   return canvas;
 }
@@ -96,7 +182,10 @@ function updateURL(replace = false) {
   history[replace ? "replaceState" : "pushState"]({}, "", url);
 }
 function visibleFeatures() {
-  return state.data.features.map((f, i) => i).filter(i => !$("active-only").checked || state.data.features[i].images.length);
+  const ids = state.manifest.schema_version === 2
+    ? state.ref.feature_ids
+    : state.data.features.map((_, i) => i);
+  return ids.filter(i => !$("active-only").checked || state.data.features[i].images.length);
 }
 function renderGallery() {
   const visible = visibleFeatures();
@@ -114,7 +203,7 @@ function renderGallery() {
   $("previous").disabled = state.page === 0; $("next").disabled = state.page === pages-1;
 }
 function renderAccuracy() {
-  const accuracy=state.manifest.accuracy, ref=state.ref;
+  const accuracy=state.manifest.accuracy, ref=state.ref, epochs=state.epochs;
   $("accuracy-context").textContent="";
   $("accuracy-caption").hidden=true;
   if(!accuracy) {
@@ -132,11 +221,11 @@ function renderAccuracy() {
   const target=state.manifest.points.find(p=>p.id===state.target);
   const describe=epoch=>values.has(epoch)?`${(values.get(epoch)*100).toFixed(1)}%`:"unavailable";
   $("accuracy-context").textContent=`Reference e${ref.epoch}: ${describe(ref.epoch)} · Target e${target.epoch}: ${describe(target.epoch)}`;
-  if(!ref.epochs.some(e=>values.has(e))) {
+  if(!epochs.some(e=>values.has(e))) {
     $("accuracy-chart").replaceChildren(node("p","empty","No accuracy measurements are available for the displayed epochs."));
     return;
   }
-  const width=Math.max(650,ref.epochs.length*20+70),cellW=(width-70)/ref.epochs.length;
+  const width=Math.max(650,epochs.length*20+70),cellW=(width-70)/epochs.length;
   const x=i=>45+(i+.5)*cellW,y=value=>135-value*115;
   const drawing=svg("svg",{viewBox:`0 0 ${width} 180`,role:"group","aria-label":"Validation top-1 accuracy by saved epoch"});
   for(const percent of [0,25,50,75,100]) {
@@ -144,21 +233,21 @@ function renderAccuracy() {
     drawing.append(svg("text",{x:38,y:y(percent/100)+4,"text-anchor":"end"},`${percent}%`));
   }
   for(const [epoch,kind,label] of [[ref.epoch,"reference","Reference"],[target.epoch,"target","Selected target"]]) {
-    const i=ref.epochs.indexOf(epoch);
+    const i=epochs.indexOf(epoch);
     if(i>=0) {
       const marker=svg("line",{x1:x(i),x2:x(i),y1:15,y2:140,class:`${kind}-marker`,"data-epoch":epoch});
       marker.append(svg("title",{},`${label} epoch ${epoch}: ${describe(epoch)}`));drawing.append(marker);
     }
   }
   let path="",connected=false;
-  ref.epochs.forEach((epoch,i)=>{
+  epochs.forEach((epoch,i)=>{
     if(!values.has(epoch)) {connected=false;return;}
     path+=`${connected?"L":"M"}${x(i)},${y(values.get(epoch))} `;connected=true;
   });
   drawing.append(svg("path",{d:path,class:"accuracy-line"}));
-  const stride=Math.max(1,Math.ceil(ref.epochs.length/28));
-  ref.epochs.forEach((epoch,i)=>{
-    if(i%stride===0 || i===ref.epochs.length-1)
+  const stride=Math.max(1,Math.ceil(epochs.length/28));
+  epochs.forEach((epoch,i)=>{
+    if(i%stride===0 || i===epochs.length-1)
       drawing.append(svg("text",{x:x(i),y:155,"text-anchor":"middle"},epoch));
     if(!values.has(epoch))return;
     const label=`Epoch ${epoch}: validation top-1 accuracy ${describe(epoch)}`;
@@ -171,14 +260,14 @@ function renderAccuracy() {
 }
 function renderMap() {
   renderAccuracy();
-  const ref = state.ref, data = state.data;
-  const width = Math.max(650, ref.epochs.length*20+70), cellW=(width-70)/ref.epochs.length, cellH=36;
+  const ref = state.ref, data = state.data, epochs = state.epochs;
+  const width = Math.max(650, epochs.length*20+70), cellW=(width-70)/epochs.length, cellH=36;
   const height = ref.layers.length*cellH+75;
   const drawing = svg("svg", {viewBox:`0 0 ${width} ${height}`,role:"group","aria-label":"Interactive epoch by layer evolution map"});
   ref.layers.forEach((layer,li) => {
     drawing.append(svg("text",{x:35,y:24+li*cellH+cellH/2,"text-anchor":"end","dominant-baseline":"middle"},layer));
-    ref.epochs.forEach((epoch,ei) => {
-      const value = mapValue(ref,data,state.feature,li,ei), target=`e${epoch}-l${layer}`;
+    epochs.forEach((epoch,ei) => {
+      const value = mapValue(ref,data,state.feature,li,ref.epochs.indexOf(epoch)), target=`e${epoch}-l${layer}`;
       const group = svg("g",{class:"cell",role:"button",tabindex:"0","aria-pressed":String(target===state.target),
         "aria-label":`Epoch ${epoch}, layer ${layer}, similarity ${Number.isFinite(value)?value.toFixed(3):"unavailable"}`});
       group.append(svg("title",{},`Epoch ${epoch} · layer ${layer} · ${Number.isFinite(value)?value.toFixed(4):"missing"}`));
@@ -192,15 +281,15 @@ function renderMap() {
         const moves={ArrowLeft:[0,-1],ArrowRight:[0,1],ArrowUp:[-1,0],ArrowDown:[1,0]};
         if (moves[event.key]) {
           event.preventDefault(); const [dl,de]=moves[event.key];
-          const nextL=Math.max(0,Math.min(ref.layers.length-1,li+dl)), nextE=Math.max(0,Math.min(ref.epochs.length-1,ei+de));
-          drawing.querySelectorAll(".cell")[nextL*ref.epochs.length+nextE].focus();
+          const nextL=Math.max(0,Math.min(ref.layers.length-1,li+dl)), nextE=Math.max(0,Math.min(epochs.length-1,ei+de));
+          drawing.querySelectorAll(".cell")[nextL*epochs.length+nextE].focus();
         }
       });
       drawing.append(group);
     });
   });
-  const stride = Math.max(1,Math.ceil(ref.epochs.length/28));
-  ref.epochs.forEach((epoch,ei) => { if(ei%stride===0 || ei===ref.epochs.length-1)
+  const stride = Math.max(1,Math.ceil(epochs.length/28));
+  epochs.forEach((epoch,ei) => { if(ei%stride===0 || ei===epochs.length-1)
     drawing.append(svg("text",{x:45+(ei+.5)*cellW,y:ref.layers.length*cellH+34,"text-anchor":"middle"},epoch)); });
   drawing.append(svg("text",{x:width/2,y:height-4,"text-anchor":"middle"},"Saved training epoch"));
   drawing.append(svg("text",{transform:`translate(12 ${15+ref.layers.length*cellH/2}) rotate(-90)`,"text-anchor":"middle"},"Layer"));
@@ -248,10 +337,15 @@ async function showMatches() {
   $("neighbours").replaceChildren(node("p","empty","Loading matching features…"));
   $("best-match-context").textContent=`Target SAE · Epoch ${targetPoint.epoch} · Layer ${targetPoint.layer}`;
   $("best-match-images").replaceChildren(node("p","empty","Loading best match…"));
-  const url=new URL(`${ref.id}/matches/${target}.bin`,state.base);
+  if(li<0 || ei<0) {
+    const message="This checkpoint was not evaluated for the selected reference. No similarity or matching feature was exported.";
+    $("neighbours").replaceChildren(node("p","empty",message));
+    $("best-match-images").replaceChildren(node("p","empty",message));
+    return;
+  }
   const targetRef=findRef(target);
-  const [buffer,targetData]=await Promise.all([
-    cached(matchCache,url.href,()=>request(url,"binary"),16),
+  const [matches,targetData]=await Promise.all([
+    matchingFeatures(ref, state.data, feature, target, li, ei),
     targetRef?referenceData(targetRef):request(new URL(`${target}/features.json`,state.base)).then(features=>({features}))
   ]).catch(error=>{
     if(stamp===matchRequest) {
@@ -261,14 +355,9 @@ async function showMatches() {
     throw error;
   });
   if(stamp!==matchRequest) return;
-  const header=new DataView(buffer),rows=header.getUint32(0,true),k=header.getUint32(4,true);
-  if(rows!==ref.features || !k || buffer.byteLength!==8+rows*k*8) throw new Error("Invalid feature-match dimensions.");
-  const ids=new Uint32Array(buffer,8,rows*k),scores=new Float32Array(buffer,8+rows*k*4,rows*k);
   const cards=[];
   let bestMatch=null;
-  for(let rank=0;rank<k;rank++) {
-    const id=ids[feature*k+rank],score=scores[feature*k+rank];
-    if(!Number.isFinite(score) || score<=0) continue;
+  for(const [rank, {id, score}] of matches.entries()) {
     if(id>=targetData.features.length) throw new Error("A matched feature ID is outside the target SAE.");
     if(bestMatch===null) bestMatch={id,score};
     const card=node("button","neighbour-card");card.type="button";
@@ -299,7 +388,7 @@ async function openReference(ref,feature=null,target=null,push=true) {
   if(feature===null) feature=data.features.reduce((best,f,i)=>f.mean_activation>data.features[best].mean_activation?i:best,0);
   if(!Number.isInteger(feature)||feature<0||feature>=ref.features) throw new Error("Feature ID is outside the selected SAE.");
   state.feature=feature;
-  const validTargets=new Set(ref.layers.flatMap(l=>ref.epochs.map(e=>`e${e}-l${l}`)));
+  const validTargets=new Set(state.manifest.points.map(p=>p.id));
   const previous=ref.epochs.filter(e=>e<ref.epoch).at(-1);
   state.target=validTargets.has(target)?target:`e${previous??ref.epochs.find(e=>e!==ref.epoch)??ref.epoch}-l${ref.layer}`;
   const visible=visibleFeatures();state.page=Math.max(0,Math.floor(visible.indexOf(feature)/PAGE_SIZE));
@@ -320,12 +409,15 @@ async function navigateFromURL() {
     $("workspace").hidden=true;$("neighbour-section").hidden=true;
     const manifestUrl=new URL(dataset.manifest,state.catalog.url);
     const manifest=await request(manifestUrl);
-    if(manifest.schema_version!==1 || !manifest.references.length) throw new Error("Unsupported or empty experiment export.");
+    if(![1,2].includes(manifest.schema_version) || !manifest.references.length) throw new Error("Unsupported or empty experiment export.");
     const images=await request(new URL("images.json",manifestUrl));
     if(routeStamp!==routeNavigation)return;
     state.manifest=manifest;state.images=images;state.base=new URL(".",manifestUrl);state.dataset=dataset.id;
+    state.epochs=[...new Set(manifest.points.map(p=>p.epoch))].sort((a,b)=>a-b);
     referenceCache.clear();matchCache.clear();
     $("provenance").textContent=`Experiment: ${manifest.title}. Source run: ${manifest.source_run}. SAE run: ${manifest.run_index}. Saved epoch labels are retained, including epoch 0 where present. ${manifest.sample_count.toLocaleString()} evaluation images. Up to ${manifest.neighbours} independent matches per target cell.`;
+    if(manifest.schema_version===2)
+      $("provenance").textContent+=" Displayed similarities use 8-bit quantization, with rounding error up to approximately 0.004. Best-match identities were selected before quantization.";
   }
   fillSelect("dataset",state.catalog.datasets.map(d=>[d.id,d.title]),dataset.id);
   const requestedRef=params.get("reference"),ref=findRef(requestedRef)??state.manifest.references.at(-1);

@@ -6,7 +6,7 @@
   <meta name="description" content="Explore how sparse features evolve across the depth and training time of a vision transformer.">
   <title>Feature Evolution Explorer</title>
   <link rel="stylesheet" href="styles.css?v=accuracy-1">
-  <script src="app.js?v=accuracy-1" defer></script>
+  <script src="app.js?v=complete-grid-1" defer></script>
 </head>
 <body>
   <header>
@@ -41,7 +41,7 @@
         <div class="map-heading"><h3>Evolution map</h3><span class="hint">Select a cell to explore its feature matches ↓</span></div>
         <div id="heatmap" class="heatmap"></div>
         <div class="legend"><span>0</span><span class="gradient"></span><span>1</span><span class="legend-caption">Combined Spearman similarity</span></div>
-        <p class="caption">★ Reference SAE. Each column is a saved checkpoint; each row is a transformer layer. Colour uses a shared 0–1 scale; negative scores are shown at 0. Outlined cell: selected target.</p>
+        <p class="caption">★ Reference SAE. Every reference uses the same exported checkpoint columns; each row is a transformer layer. Grey cells have no saved score. Colour uses a shared 0–1 scale; negative scores are shown at 0. Outlined cell: selected target.</p>
         <div class="map-heading"><h3>Top activating images</h3><span id="image-context" class="hint"></span></div>
         <div id="images" class="image-grid"></div>
         <section class="match-comparison" aria-labelledby="best-match-title" aria-live="polite">
