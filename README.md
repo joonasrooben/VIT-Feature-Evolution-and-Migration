@@ -25,6 +25,8 @@ We also provide an optional alternative to step-by-step mehtod described in the 
 
 [Demo](https://joonasrooben.github.io/VIT-Feature-Evolution-and-Migration/) is available for the static feature browser, exporting the Shapes3D notebook results. The browser shows feature evolution maps, top activating images, and clickable cross-SAE matches at each epoch-layer cell.
 
+**Update:** Now the ImageNet-1k is also available for all the layers but limited amount of epochs due to the storage constraints. 
+
 ### Acknowledegement
 
 Parts of the code used in our work was adapted from the Github repositories such as: [OpenOOD](https://github.com/Jingkang50/OpenOOD/tree/main).

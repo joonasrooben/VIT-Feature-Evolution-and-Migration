@@ -444,5 +444,13 @@ window.addEventListener("popstate",()=>navigateFromURL().catch(report));
   const catalogUrl=new URL(config.catalogUrl,location.href);
   state.catalog=await request(catalogUrl);state.catalog.url=catalogUrl;
   if(state.catalog.schema_version!==1)throw new Error("Unsupported experiment catalog.");
+  const url = new URL(location.href);
+  const selectionKeys = ["dataset", "reference", "feature", "target"];
+  if (!selectionKeys.some(key => url.searchParams.has(key))) {
+    url.searchParams.set("dataset", "imagenet-1k");
+    url.searchParams.set("reference", "e0-l8");
+    url.searchParams.set("feature", "881");
+    history.replaceState({}, "", url);
+  }
   await navigateFromURL();
 })().catch(report);
