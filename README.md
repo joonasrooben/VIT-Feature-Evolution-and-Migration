@@ -2,8 +2,7 @@
 Repository of CIKM´26 paper ["Feature Evolution and Migration during Vision Transformer Training"](https://arxiv.org/abs/2608.20134)
 
 #### [DEMO](https://joonasrooben.github.io/VIT-Feature-Evolution-and-Migration/)
-
-[How to use the DEMO](https://youtu.be/KGjSC27zJf8)
+[![How to use the DEMO](https://youtu.be/KGjSC27zJf8)](https://youtu.be/KGjSC27zJf8)
 
 ### Requirements
 
