@@ -1,6 +1,10 @@
 ### Feature Evolution and Migration during Vision Transformer Training
 Repository of CIKM´26 paper ["Feature Evolution and Migration during Vision Transformer Training"](https://arxiv.org/abs/2608.20134)
 
+#### [DEMO](https://joonasrooben.github.io/VIT-Feature-Evolution-and-Migration/)
+
+[How to use the DEMO](https://youtu.be/KGjSC27zJf8)
+
 ### Requirements
 
 Requirements to run the code are given in the `requirements.txt` file.
@@ -33,10 +37,13 @@ Parts of the code used in our work was adapted from the Github repositories such
 
 ### Citation
 ```bibtex
-@article{jarve2026feature,
-  title={Feature Evolution and Migration during Vision Transformer Training},
-  author={J{\"a}rve, Joonas and Aysel, Halil Ibrahim and Khajuria, Tarun and Kull, Meelis},
-  journal={arXiv preprint arXiv:2608.20134},
-  year={2026}
-}
+@inproceedings{J_rve_2026,
+   title={Feature Evolution and Migration during Vision Transformer Training},
+   url={http://dx.doi.org/10.1145/3799682.3841045},
+   DOI={10.1145/3799682.3841045},
+   booktitle={Proceedings of the 35th ACM International Conference on Information and Knowledge Management},
+   publisher={ACM},
+   author={Järve, Joonas and Aysel, Halil Ibrahim and Khajuria, Tarun and Kull, Meelis},
+   year={2026},
+   month=Nov, pages={1767–1778} }
 ```
